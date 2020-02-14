@@ -105,7 +105,7 @@ currentSpectrum.convertAndInterpolate = function(someTable, wavelengthColumn, va
 	return resultTable;
 };
 
-currentSpectrum.readSpectrumCSV = function(filename, wavelengthColumn, valueColumn){
+currentSpectrum.readSpectrumCSV = function(filename, delimiter, wavelengthColumn, valueColumn){
 	if (typeof wavelengthColumn === 'undefined'){
 		wavelengthColumn = 0;
 	};
@@ -116,7 +116,7 @@ currentSpectrum.readSpectrumCSV = function(filename, wavelengthColumn, valueColu
 	file.open("r");   
 	var fileContents = file.read();  
 	file.close(); 
-	var rawCSV = this.parseDelimitedFile(fileContents, ",");
+	var rawCSV = this.parseDelimitedFile(fileContents, delimiter);
 	var processedCSV = this.convertAndInterpolate(rawCSV, wavelengthColumn, valueColumn, this.minWL, this.maxWL, this.stepWL);
 	return processedCSV;
 };
@@ -227,17 +227,17 @@ currentSpectrum.setPreviewColor = function(){
 
 currentSpectrum.setObserver = function(observerPath){
 	this.observer = [];
-	this.observer.X = this.readSpectrumCSV(observerPath, 0, 1);
-	this.observer.Y = this.readSpectrumCSV(observerPath, 0, 2);
-	this.observer.Z = this.readSpectrumCSV(observerPath, 0, 3);
+	this.observer.X = this.readSpectrumCSV(observerPath, this.observerDelimiter, 0, 1);
+	this.observer.Y = this.readSpectrumCSV(observerPath, this.observerDelimiter, 0, 2);
+	this.observer.Z = this.readSpectrumCSV(observerPath, this.observerDelimiter, 0, 3);
 };
 
 currentSpectrum.setIlluminant = function(illuminantPath){
-	this.illuminant = this.readSpectrumCSV(illuminantPath, 0, 1);
+	this.illuminant = this.readSpectrumCSV(illuminantPath, this.illuminantDelimiter, 0, 1);
 };
 
 currentSpectrum.setSpectrum = function(spectrumPath){
-	this.spectrum = this.readSpectrumCSV(spectrumPath, 0, 1);
+	this.spectrum = this.readSpectrumCSV(spectrumPath, this.spectrumDelimiter, 0, 1);
 	this.determineSpectrumMaximum();
 	this.setMaxSaturation();
 	this.setPreviewColor();
@@ -261,6 +261,11 @@ currentSpectrum.setMaxSaturation = function(){
 	this.lcFactor = this.maxSaturation/2;
 };
 
+var delimiters = {
+		"comma":",",
+		"tab":"\t"
+	};
+
 currentSpectrum.minWL = 380;
 currentSpectrum.maxWL = 780;
 currentSpectrum.stepWL = 5;
@@ -268,6 +273,10 @@ currentSpectrum.stepWL = 5;
 currentSpectrum.gamma = 563/256;
 currentSpectrum.isOutsideGamutUp = false;
 currentSpectrum.isOutsideGamutDown = false;
+currentSpectrum.spectrumDelimiter = delimiters["comma"];
+currentSpectrum.illuminantDelimiter = delimiters["comma"];
+currentSpectrum.observerDelimiter = delimiters["comma"];
+
 
 // illuminant and observer data comes from here: http://files.cie.co.at/204.xls
 
@@ -275,12 +284,12 @@ var scriptDataPath = (new File($.fileName)).parent + "/spectrum-to-rgb_data/";
 var cieXYZPath = scriptDataPath + "CIE1931observer.csv";
 var illuminantPath = scriptDataPath + "CIED65.csv";
 var spectrumPath = scriptDataPath + "grey.csv";
-var spectrumFileName = "Sample grey";
+
 
 currentSpectrum.setObserver(cieXYZPath);
 currentSpectrum.setIlluminant(illuminantPath);
 currentSpectrum.setSpectrum(spectrumPath);
-
+currentSpectrum.swatchName = "Sample grey";
 
 var openSpectrumWindow = new Window("dialog", "Spectrum to RGB conversion");
 
@@ -288,9 +297,33 @@ var basicSettings = openSpectrumWindow.add("panel", undefined, "Choose a spectru
 	var spectrumFileGroup = basicSettings.add("group");
 		spectrumFileGroup.orientation = "row";
 	var spectrumFile = spectrumFileGroup.add("button",undefined,"Open a spectrum file");
-	var spectrumFilePath = spectrumFileGroup.add("statictext");
+	var spectrumFileDelimiterText = spectrumFileGroup.add("statictext", undefined, "Delimiter:");
+	var spectrumFileDelimiter = spectrumFileGroup.add("dropdownlist", undefined, 
+		(function(x){var keys = [];for (var key in x){keys.push(key);}return keys;})(delimiters)
+		);
+		spectrumFileDelimiter.selection = 0;
+		spectrumFileDelimiter.onChange = function(){
+			currentSpectrum.spectrumDelimiter = delimiters[spectrumFileDelimiter.selection];
+		};
+
+	spectrumFile.onClick = function () {
+		var file = File.openDialog();
+		spectrumPath = file.fsName;  
+		currentSpectrum.swatchName = file.name;  
+		file.close();
+		swatchName.text = currentSpectrum.swatchName;
+
+		currentSpectrum.setSpectrum(spectrumPath);
+		lcControl.maxvalue = currentSpectrum.maxSaturation;
+		lcControl.value = currentSpectrum.lcFactor;
+		lcControlValue.text = currentSpectrum.lcFactor;
+
 		spectrumFilePath.text = spectrumFileName;
 
+		lcColorPreview.hide();
+		lcColorPreview.show();
+	};
+	
 /*	var absorptionOrEmission = basicSettings.add("group");
 		absorptionOrEmission.orientation = "row";
 	var absorptionRB = absorptionOrEmission.add("radiobutton", undefined, "absorption");
@@ -349,22 +382,11 @@ var colorPreview = lcColorPreview.graphics;
 		colorPreview.closePath();
 	};
 
-spectrumFile.onClick = function () {
-	var file = File.openDialog();
-	spectrumPath = file.fsName;  
-	spectrumFileName = file.name;  
-	file.close();
-
-	currentSpectrum.setSpectrum(spectrumPath);
-	lcControl.maxvalue = currentSpectrum.maxSaturation;
-	lcControl.value = currentSpectrum.lcFactor;
-	lcControlValue.text = currentSpectrum.lcFactor;
-
-	spectrumFilePath.text = spectrumFileName;
-
-	lcColorPreview.hide();
-	lcColorPreview.show();
-};
+var swatchName = openSpectrumWindow.add("edittext", undefined, currentSpectrum.swatchName);
+	swatchName.preferredSize.width = 200;
+	swatchName.onChange = function() {
+		currentSpectrum.swatchName = swatchName.text;
+	};
 
 var completeControlGroup = openSpectrumWindow.add("group");
 	completeControlGroup.orientation = "row";
@@ -388,18 +410,18 @@ openSpectrumWindow.show();
 
 if (createSwatch){
 	if (app.name === "Adobe InDesign"){
-		if (app.documents[0].colors.itemByName(spectrumFileName).isValid){
-			app.documents[0].colors.itemByName(spectrumFileName).remove();
+		if (app.documents[0].colors.itemByName(currentSpectrum.swatchName).isValid){
+			app.documents[0].colors.itemByName(currentSpectrum.swatchName).remove();
 		};
 		var newColor = app.activeDocument.colors.add();
 		newColor.space = ColorSpace.RGB;
-		newColor.name = spectrumFileName;
+		newColor.name = currentSpectrum.swatchName;
 		newColor.colorValue = currentSpectrum.returnRGB(true);
 	};
 
 	if (app.name === "Adobe Illustrator"){
 		var newSwatch = app.activeDocument.swatches.add();
-		newSwatch.name = spectrumFileName;
+		newSwatch.name = currentSpectrum.swatchName;
 		var RGBValues = currentSpectrum.returnRGB(true);
 		var newColor = new RGBColor();
 		newColor.red = RGBValues[0];
