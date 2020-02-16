@@ -1,4 +1,4 @@
-//    spectrum-to-rgb.jsx
+//    spectrum-to-rgb.jsx 0.0.1
 //    Illustrator/InDesign script to create swatches from absorption spectra
 //    Copyright 2020 Sergey Slyusarev
 //
@@ -32,15 +32,19 @@ currentSpectrum.parseDelimitedFile = function(fileContents, delimiter){
 	var lineMatches = null;
 	var arrMatches = null;
 
+	var maxRowLength = 0;
+
 	while(lineMatches = newLinePattern.exec(fileContents)){
 
 		if (String(lineMatches).substring(0, 1) != "#"){
 			var lineVector = [];
-		
-			while(arrMatches = linePattern.exec(lineMatches[0])){
-				lineVector.push(arrMatches[0]);	
-			};
 
+			while(arrMatches = linePattern.exec(lineMatches[0])){
+				lineVector.push(arrMatches[0]);
+			};
+			if (lineVector.length > maxRowLength){
+				maxRowLength = lineVector.length;
+			};
 			for (var j = 0; j < lineVector.length; j++){
 				if (typeof columnsAsVectors[j] === 'undefined'){
 					columnsAsVectors.push([]);
@@ -48,6 +52,9 @@ currentSpectrum.parseDelimitedFile = function(fileContents, delimiter){
 				columnsAsVectors[j].push(lineVector[j]);
 			};
 		};
+	};
+	if(maxRowLength < 2){
+		alert("Invalid file, possibly wrong delimiter");
 	};
 	return(columnsAsVectors);
 };
@@ -99,7 +106,7 @@ currentSpectrum.convertAndInterpolate = function(someTable, wavelengthColumn, va
 				var matchingValue = neareatLowWavelength;
 			};
 		};
-		
+
 		resultTable["" + i] = Math.abs(matchingValue);
 	};
 	return resultTable;
@@ -113,9 +120,9 @@ currentSpectrum.readSpectrumCSV = function(filename, delimiter, wavelengthColumn
 		valueColumn = 1;
 	};
 	var file = File(filename);
-	file.open("r");   
-	var fileContents = file.read();  
-	file.close(); 
+	file.open("r");
+	var fileContents = file.read();
+	file.close();
 	var rawCSV = this.parseDelimitedFile(fileContents, delimiter);
 	var processedCSV = this.convertAndInterpolate(rawCSV, wavelengthColumn, valueColumn, this.minWL, this.maxWL, this.stepWL);
 	return processedCSV;
@@ -134,6 +141,9 @@ currentSpectrum.determineSpectrumMaximum = function(){
 };
 
 currentSpectrum.spectrumToXYZ = function(lcFactor){
+	if (typeof lcFactor === 'undefined'){
+		lcFactor = this.lcFactor;
+	};
 	var N = 0;
 	var X = 0;
 	var Y = 0;
@@ -210,7 +220,7 @@ currentSpectrum.RGBNormalize = function(RGBGammaCorrected){
 };
 
 currentSpectrum.returnRGB = function(returnNormalized){
-	var XYZ = this.spectrumToXYZ(this.lcFactor);
+	var XYZ = this.spectrumToXYZ();
 	var RGB = this.XYZtoAdobeRGB(XYZ)[0];
 	var RGBGammaCorrected = this.RGBGammaCorrect(RGB);
 	var RGBNormalized = this.RGBNormalize(RGBGammaCorrected);
@@ -298,7 +308,7 @@ var basicSettings = openSpectrumWindow.add("panel", undefined, "Choose a spectru
 		spectrumFileGroup.orientation = "row";
 	var spectrumFile = spectrumFileGroup.add("button",undefined,"Open a spectrum file");
 	var spectrumFileDelimiterText = spectrumFileGroup.add("statictext", undefined, "Delimiter:");
-	var spectrumFileDelimiter = spectrumFileGroup.add("dropdownlist", undefined, 
+	var spectrumFileDelimiter = spectrumFileGroup.add("dropdownlist", undefined,
 		(function(x){var keys = [];for (var key in x){keys.push(key);}return keys;})(delimiters)
 		);
 		spectrumFileDelimiter.selection = 0;
@@ -308,12 +318,13 @@ var basicSettings = openSpectrumWindow.add("panel", undefined, "Choose a spectru
 
 	spectrumFile.onClick = function () {
 		var file = File.openDialog();
-		spectrumPath = file.fsName;  
-		currentSpectrum.swatchName = file.name;  
+		spectrumPath = file.fsName;
+		currentSpectrum.swatchName = file.name;
 		file.close();
 		swatchName.text = currentSpectrum.swatchName;
 
 		currentSpectrum.setSpectrum(spectrumPath);
+
 		lcControl.maxvalue = currentSpectrum.maxSaturation;
 		lcControl.value = currentSpectrum.lcFactor;
 		lcControlValue.text = currentSpectrum.lcFactor;
@@ -323,7 +334,7 @@ var basicSettings = openSpectrumWindow.add("panel", undefined, "Choose a spectru
 		lcColorPreview.hide();
 		lcColorPreview.show();
 	};
-	
+
 /*	var absorptionOrEmission = basicSettings.add("group");
 		absorptionOrEmission.orientation = "row";
 	var absorptionRB = absorptionOrEmission.add("radiobutton", undefined, "absorption");
@@ -371,22 +382,24 @@ var colorPreview = openSpectrumWindow.add("panel", undefined, "Color preview");
 	    };
 	var lcColorPreview = lcControlGroup.add("group");
 		lcColorPreview.size = [50, 50];
+	var colorPreview = lcColorPreview.graphics;
+		lcColorPreview.onDraw = function() {
+			colorPreview.newPath();
+			colorPreview.rectPath(0, 0, 50, 50);
+			colorPreview.fillPath(
+				colorPreview.newBrush(
+					colorPreview.BrushType.SOLID_COLOR, currentSpectrum.previewColor));
+			colorPreview.closePath();
+		};
 
-var colorPreview = lcColorPreview.graphics;
-	lcColorPreview.onDraw = function() {
-		colorPreview.newPath();
-		colorPreview.rectPath(0, 0, 50, 50);
-		colorPreview.fillPath(
-			colorPreview.newBrush(
-				colorPreview.BrushType.SOLID_COLOR, currentSpectrum.previewColor));
-		colorPreview.closePath();
-	};
-
-var swatchName = openSpectrumWindow.add("edittext", undefined, currentSpectrum.swatchName);
-	swatchName.preferredSize.width = 200;
-	swatchName.onChange = function() {
-		currentSpectrum.swatchName = swatchName.text;
-	};
+var swatchNameGroup = openSpectrumWindow.add("group");
+	swatchNameGroup.orientation = "row";
+	var swatchNameText = swatchNameGroup.add("statictext", undefined, "Swatch name:");
+	var swatchName = swatchNameGroup.add("edittext", undefined, currentSpectrum.swatchName);
+		swatchName.preferredSize.width = 200;
+		swatchName.onChange = function() {
+			currentSpectrum.swatchName = swatchName.text;
+		};
 
 var completeControlGroup = openSpectrumWindow.add("group");
 	completeControlGroup.orientation = "row";
@@ -420,13 +433,13 @@ if (createSwatch){
 	};
 
 	if (app.name === "Adobe Illustrator"){
-		var newSwatch = app.activeDocument.swatches.add();
-		newSwatch.name = currentSpectrum.swatchName;
 		var RGBValues = currentSpectrum.returnRGB(true);
 		var newColor = new RGBColor();
 		newColor.red = RGBValues[0];
 		newColor.green = RGBValues[1];
 		newColor.blue = RGBValues[2];
+		var newSwatch = app.activeDocument.swatches.add();
+		newSwatch.name = currentSpectrum.swatchName;
 		newSwatch.color = newColor;
 	};
 
