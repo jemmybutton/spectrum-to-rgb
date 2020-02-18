@@ -22,25 +22,17 @@
 var currentSpectrum = {}
 
 currentSpectrum.parseDelimitedFile = function(fileContents, delimiter){
-
 	var newLinePattern = new RegExp("(.+)\\n","gi")
-
 	var linePattern = new RegExp("([^" + delimiter + "]+)","gi")
-
 	var columnsAsVectors = [];
-
 	var lineMatches = null;
 	var arrMatches = null;
-
 	var maxRowLength = 0;
-
 	while(lineMatches = newLinePattern.exec(fileContents)){
-
 		if (String(lineMatches).substring(0, 1) != "#"){
-			var lineVector = [];
-
+			var lineVector = [];	
 			while(arrMatches = linePattern.exec(lineMatches[0])){
-				lineVector.push(arrMatches[0]);
+				lineVector.push(arrMatches[0]);	
 			};
 			if (lineVector.length > maxRowLength){
 				maxRowLength = lineVector.length;
@@ -55,8 +47,10 @@ currentSpectrum.parseDelimitedFile = function(fileContents, delimiter){
 	};
 	if(maxRowLength < 2){
 		alert("Invalid file, possibly wrong delimiter");
+		return false;
+	} else {
+		return(columnsAsVectors);
 	};
-	return(columnsAsVectors);
 };
 
 currentSpectrum.convertAndInterpolate = function(someTable, wavelengthColumn, valueColumn){
@@ -106,7 +100,7 @@ currentSpectrum.convertAndInterpolate = function(someTable, wavelengthColumn, va
 				var matchingValue = neareatLowWavelength;
 			};
 		};
-
+		
 		resultTable["" + i] = Math.abs(matchingValue);
 	};
 	return resultTable;
@@ -120,12 +114,16 @@ currentSpectrum.readSpectrumCSV = function(filename, delimiter, wavelengthColumn
 		valueColumn = 1;
 	};
 	var file = File(filename);
-	file.open("r");
-	var fileContents = file.read();
-	file.close();
+	file.open("r");   
+	var fileContents = file.read();  
+	file.close(); 
 	var rawCSV = this.parseDelimitedFile(fileContents, delimiter);
-	var processedCSV = this.convertAndInterpolate(rawCSV, wavelengthColumn, valueColumn, this.minWL, this.maxWL, this.stepWL);
-	return processedCSV;
+	if (rawCSV != false){
+		var processedCSV = this.convertAndInterpolate(rawCSV, wavelengthColumn, valueColumn, this.minWL, this.maxWL, this.stepWL);
+		return processedCSV;
+	} else {
+		return false;
+	};
 };
 
 currentSpectrum.determineSpectrumMaximum = function(){
@@ -236,6 +234,9 @@ currentSpectrum.setPreviewColor = function(){
 };
 
 currentSpectrum.setObserver = function(observerPath){
+	if (typeof(observerPath) === 'undefined'){
+		observerPath = this.observerPath;
+	};
 	this.observer = [];
 	this.observer.X = this.readSpectrumCSV(observerPath, this.observerDelimiter, 0, 1);
 	this.observer.Y = this.readSpectrumCSV(observerPath, this.observerDelimiter, 0, 2);
@@ -243,10 +244,16 @@ currentSpectrum.setObserver = function(observerPath){
 };
 
 currentSpectrum.setIlluminant = function(illuminantPath){
+	if (typeof(illuminantPath) === 'undefined'){
+		illuminantPath = this.illuminantPath;
+	};
 	this.illuminant = this.readSpectrumCSV(illuminantPath, this.illuminantDelimiter, 0, 1);
 };
 
 currentSpectrum.setSpectrum = function(spectrumPath){
+	if (typeof(spectrumPath) === 'undefined'){
+		spectrumPath = this.spectrumPath;
+	};
 	this.spectrum = this.readSpectrumCSV(spectrumPath, this.spectrumDelimiter, 0, 1);
 	this.determineSpectrumMaximum();
 	this.setMaxSaturation();
@@ -291,14 +298,14 @@ currentSpectrum.observerDelimiter = delimiters["comma"];
 // illuminant and observer data comes from here: http://files.cie.co.at/204.xls
 
 var scriptDataPath = (new File($.fileName)).parent + "/spectrum-to-rgb_data/";
-var cieXYZPath = scriptDataPath + "CIE1931observer.csv";
-var illuminantPath = scriptDataPath + "CIED65.csv";
-var spectrumPath = scriptDataPath + "grey.csv";
+currentSpectrum.observerPath = scriptDataPath + "CIE1931observer.csv";
+currentSpectrum.illuminantPath = scriptDataPath + "CIED65.csv";
+currentSpectrum.spectrumPath = scriptDataPath + "grey.csv";
 
 
-currentSpectrum.setObserver(cieXYZPath);
-currentSpectrum.setIlluminant(illuminantPath);
-currentSpectrum.setSpectrum(spectrumPath);
+currentSpectrum.setObserver();
+currentSpectrum.setIlluminant();
+currentSpectrum.setSpectrum();
 currentSpectrum.swatchName = "Sample grey";
 
 var openSpectrumWindow = new Window("dialog", "Spectrum to RGB conversion");
@@ -308,33 +315,27 @@ var basicSettings = openSpectrumWindow.add("panel", undefined, "Choose a spectru
 		spectrumFileGroup.orientation = "row";
 	var spectrumFile = spectrumFileGroup.add("button",undefined,"Open a spectrum file");
 	var spectrumFileDelimiterText = spectrumFileGroup.add("statictext", undefined, "Delimiter:");
-	var spectrumFileDelimiter = spectrumFileGroup.add("dropdownlist", undefined,
+	var spectrumFileDelimiter = spectrumFileGroup.add("dropdownlist", undefined, 
 		(function(x){var keys = [];for (var key in x){keys.push(key);}return keys;})(delimiters)
 		);
 		spectrumFileDelimiter.selection = 0;
 		spectrumFileDelimiter.onChange = function(){
 			currentSpectrum.spectrumDelimiter = delimiters[spectrumFileDelimiter.selection];
+			//currentSpectrum.setSpectrum();
+			//colorPreview.updateAll();
 		};
 
 	spectrumFile.onClick = function () {
 		var file = File.openDialog();
-		spectrumPath = file.fsName;
-		currentSpectrum.swatchName = file.name;
+		currentSpectrum.spectrumPath = file.fsName;  
+		currentSpectrum.swatchName = file.name;  
 		file.close();
+		currentSpectrum.setSpectrum();
+		colorPreview.updateAll();
 		swatchName.text = currentSpectrum.swatchName;
-
-		currentSpectrum.setSpectrum(spectrumPath);
-
-		lcControl.maxvalue = currentSpectrum.maxSaturation;
-		lcControl.value = currentSpectrum.lcFactor;
-		lcControlValue.text = currentSpectrum.lcFactor;
-
 		spectrumFilePath.text = spectrumFileName;
-
-		lcColorPreview.hide();
-		lcColorPreview.show();
 	};
-
+	
 /*	var absorptionOrEmission = basicSettings.add("group");
 		absorptionOrEmission.orientation = "row";
 	var absorptionRB = absorptionOrEmission.add("radiobutton", undefined, "absorption");
@@ -371,7 +372,6 @@ var colorPreview = openSpectrumWindow.add("panel", undefined, "Color preview");
 		lcColorPreview.show();
 	    };
 	var lcControlUnit = lcControlGroup.add("statictext", undefined, "lc = ");
-
 	var lcControlValue = lcControlGroup.add("edittext", [0,0,80,20], lcControl.value);
 	lcControlValue.onChange = function() {
 	    lcControl.value = Number(lcControlValue.text);
@@ -391,6 +391,14 @@ var colorPreview = openSpectrumWindow.add("panel", undefined, "Color preview");
 					colorPreview.BrushType.SOLID_COLOR, currentSpectrum.previewColor));
 			colorPreview.closePath();
 		};
+	colorPreview.updateAll = function(){
+		lcControl.maxvalue = currentSpectrum.maxSaturation;
+		lcControl.value = currentSpectrum.lcFactor;
+		lcControlValue.text = currentSpectrum.lcFactor;
+		lcColorPreview.hide();
+		lcColorPreview.show();
+	};
+		
 
 var swatchNameGroup = openSpectrumWindow.add("group");
 	swatchNameGroup.orientation = "row";
