@@ -299,10 +299,17 @@ currentSpectrum.setSpectrum = function(spectrumPath){
 	if (typeof(spectrumPath) === 'undefined'){
 		spectrumPath = this.spectrumPath;
 	};
-	this.spectrum = this.readSpectrumCSV(spectrumPath, this.spectrumDelimiter, 0, 1);
-	this.determineSpectrumMaximum();
-	this.setMaxSaturation();
-	this.setPreviewColor();
+	var newSpectrum = this.readSpectrumCSV(spectrumPath, this.spectrumDelimiter, 0, 1);
+	if (newSpectrum != false){
+		this.spectrum = newSpectrum;
+		this.spectrumPath = spectrumPath;
+		this.determineSpectrumMaximum();
+		this.setMaxSaturation();
+		this.setPreviewColor();
+		return true;
+	} else {
+		return false;
+	};
 };
 
 currentSpectrum.findMaxSaturation = function(minSaturation, maxSaturation, i){
@@ -361,6 +368,7 @@ currentSpectrum.swatchName = "Sample grey";
 var openSpectrumWindow = new Window("dialog", "Spectrum to RGB conversion");
 
 var basicSettings = openSpectrumWindow.add("panel", undefined, "Choose a spectrum file");
+	basicSettings.size = [380, 80];
 	var spectrumFileGroup = basicSettings.add("group");
 		spectrumFileGroup.orientation = "row";
 	var spectrumFile = spectrumFileGroup.add("button",undefined,"Open a spectrum file");
@@ -374,16 +382,21 @@ var basicSettings = openSpectrumWindow.add("panel", undefined, "Choose a spectru
 			//currentSpectrum.setSpectrum();
 			//colorPreview.updateAll();
 		};
-
+	var fileNameText = basicSettings.add("statictext",undefined,undefined, 
+			{truncate:'middle'});
+		fileNameText.text = currentSpectrum.spectrumPath;
+		fileNameText.size = [350, 20];
 	spectrumFile.onClick = function () {
 		var file = File.openDialog();
-		currentSpectrum.spectrumPath = file.fsName;  
 		currentSpectrum.swatchName = file.name;  
-		file.close();
-		currentSpectrum.setSpectrum();
-		colorPreview.updateAll();
-		swatchName.text = currentSpectrum.swatchName;
-		spectrumFilePath.text = spectrumFileName;
+		var spectrumSet = currentSpectrum.setSpectrum(file.fsName);
+		if (spectrumSet){
+			fileNameText.text = currentSpectrum.spectrumPath;
+			file.close();
+			colorPreview.updateAll();
+			swatchName.text = currentSpectrum.swatchName;
+			spectrumFilePath.text = spectrumFileName;
+		};
 	};
 	
 /*	var absorptionOrEmission = basicSettings.add("group");
@@ -392,6 +405,7 @@ var basicSettings = openSpectrumWindow.add("panel", undefined, "Choose a spectru
 	var emissionRB = absorptionOrEmission.add("radiobutton", undefined, "Emission");*/
 
 var advancedSettings = openSpectrumWindow.add("panel", undefined, "Advanced Settings");
+	advancedSettings.size = [380, 50];
 	var colorSpace = advancedSettings.add("dropdownlist", undefined, 
 		(function(x){var keys = [];for (var key in x){keys.push(key);}return keys;})(colorSpaces)
 		);
@@ -408,6 +422,7 @@ var advancedSettings = openSpectrumWindow.add("panel", undefined, "Advanced Sett
 
 
 var colorPreview = openSpectrumWindow.add("panel", undefined, "Color preview");
+	colorPreview.size = [380, 80];
 	var lcControlGroup = colorPreview.add("group");
 		lcControlGroup.orientation = "row";
 	var lcControl = lcControlGroup.add("slider",undefined,"Open an illuminant file");
@@ -422,7 +437,7 @@ var colorPreview = openSpectrumWindow.add("panel", undefined, "Color preview");
 		lcColorPreview.show();
 	    };
 	var lcControlUnit = lcControlGroup.add("statictext", undefined, "lc = ");
-	var lcControlValue = lcControlGroup.add("edittext", [0,0,80,20], lcControl.value*currentSpectrum.maxSaturation);
+	var lcControlValue = lcControlGroup.add("edittext", [0,0,110,20], lcControl.value*currentSpectrum.maxSaturation);
 	lcControlValue.onChange = function() {
 	    lcControl.value = Number(lcControlValue.text)/currentSpectrum.maxSaturation;
 	    currentSpectrum.lcFactor = Number(lcControlValue.text);
@@ -453,7 +468,7 @@ var swatchNameGroup = openSpectrumWindow.add("group");
 	swatchNameGroup.orientation = "row";
 	var swatchNameText = swatchNameGroup.add("statictext", undefined, "Swatch name:");
 	var swatchName = swatchNameGroup.add("edittext", undefined, currentSpectrum.swatchName);
-		swatchName.preferredSize.width = 200;
+		swatchName.preferredSize.width = 250;
 		swatchName.onChange = function() {
 			currentSpectrum.swatchName = swatchName.text;
 		};
