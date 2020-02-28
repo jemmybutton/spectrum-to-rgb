@@ -432,20 +432,16 @@
 			lcControl.maxvalue = 1;
 			lcControl.value = currentSpectrum.lcFactor/currentSpectrum.maxSaturation;
 		lcControl.onChanging = function() {
-		    lcControlValue.text = lcControl.value*currentSpectrum.maxSaturation;
-		    currentSpectrum.lcFactor = Number(lcControlValue.text);
+		    currentSpectrum.lcFactor = Number(lcControl.value*currentSpectrum.maxSaturation);
 			currentSpectrum.setPreviewColor();
-		    lcColorPreview.hide();
-			lcColorPreview.show();
+		    colorPreview.updateAll();
 		    };
 		var lcControlUnit = lcControlGroup.add("statictext", undefined, "lc = ");
 		var lcControlValue = lcControlGroup.add("edittext", [0,0,110,20], lcControl.value*currentSpectrum.maxSaturation);
 		lcControlValue.onChange = function() {
-		    lcControl.value = Number(lcControlValue.text)/currentSpectrum.maxSaturation;
 		    currentSpectrum.lcFactor = Number(lcControlValue.text);
 			currentSpectrum.setPreviewColor();
-		    lcColorPreview.hide();
-			lcColorPreview.show();
+		    colorPreview.updateAll();
 		    };
 		var lcColorPreview = lcControlGroup.add("group");
 			lcColorPreview.size = [50, 50];
@@ -482,6 +478,7 @@
 		var okButton = completeControlGroup.add("button",undefined,"Create a swatch");
 
 		okButton.onClick = function () {
+			
 			if (app.name === "Adobe InDesign"){
 				if (app.documents[0].colors.itemByName(currentSpectrum.swatchName).isValid){
 					app.documents[0].colors.itemByName(currentSpectrum.swatchName).remove();
@@ -494,21 +491,26 @@
 
 			if (app.name === "Adobe Illustrator"){
 				var RGBValues = currentSpectrum.returnRGB(true);
-				var newColor = new RGBColor();
-				newColor.red = RGBValues[0];
-				newColor.green = RGBValues[1];
-				newColor.blue = RGBValues[2];
-				var newSwatch = app.activeDocument.swatches.add();
-				newSwatch.name = currentSpectrum.swatchName;
-				newSwatch.color = newColor;
+				var bridgeTalkObject = new BridgeTalk;
+				bridgeTalkObject.target = "illustrator";
+				bridgeTalkObject.body = ""
+				+ "var newColor = new RGBColor();"
+				+ "newColor.red = "  +  RGBValues[0] + ";"
+				+ "newColor.green = " + RGBValues[1] + ";"
+				+ "newColor.blue = " + RGBValues[2] + ";"
+				+ "var newSwatch = app.activeDocument.swatches.add();"
+				+ "newSwatch.name = \"" + currentSpectrum.swatchName + "\";"
+				+ "newSwatch.color = newColor;";
+				bridgeTalkObject.send();
 			};
 
 			if (app.name === "Adobe Photoshop"){
 				alert(currentSpectrum.returnRGB(true));
 			};
+
 		};
 
-		var cancelButton = completeControlGroup.add("button",undefined,"Close");
+		var cancelButton = completeControlGroup.add("button",undefined,"Cancel");
 
 		cancelButton.onClick = function () {
 			openSpectrumWindow.close();
