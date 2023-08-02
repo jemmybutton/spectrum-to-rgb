@@ -1,6 +1,7 @@
-//    spectrum-to-rgb.jsx 0.0.1
-//    Illustrator/InDesign script to create swatches from absorption spectra
-//    Copyright 2020 Sergey Slyusarev
+//    spectrum-to-rgb.jsx 0.0.2
+//    Illustrator/InDesign script to create swatches from absorption 
+//    and emission spectra
+//    Copyright 2023 Sergey Slyusarev
 //
 //    This program is free software: you can redistribute it and/or modify
 //    it under the terms of the GNU General Public License as published by
@@ -23,7 +24,7 @@
 	// Current spectrum
 	//
 
-	var currentSpectrum = {}
+	var currentSpectrum = {};
 
 	currentSpectrum.parseDelimitedFile = function(fileContents, delimiter){
 		var newLinePattern = new RegExp("(.+)\\n","gi")
@@ -142,7 +143,7 @@
 		})(this.spectrum);
 	};
 
-	currentSpectrum.spectrumToXYZ = function(lcFactor){
+	currentSpectrum.spectrumToXYZabsorption = function(lcFactor){
 		if (typeof lcFactor === 'undefined'){
 			lcFactor = this.lcFactor;
 		};
@@ -160,10 +161,31 @@
 		return [X/N, Y/N, Z/N];
 	};
 
+	currentSpectrum.spectrumToXYZemission = function(lcFactor){
+		if (typeof lcFactor === 'undefined'){
+			lcFactor = this.lcFactor;
+		};
+		var N = 0;
+		var X = 0;
+		var Y = 0;
+		var Z = 0;
+		for (var i in this.spectrum){
+			var emission = this.emissionNormalize(this.spectrum[i], lcFactor);
+			X = X + this.observer.X[i]*emission;
+			Y = Y + this.observer.Y[i]*emission;
+			Z = Z + this.observer.Z[i]*emission;
+		};
+		return [X, Y, Z];
+	};
+
 	currentSpectrum.absorbanceToTransmittance = function(absorbance, lc){
 		return Math.pow(10,-(absorbance*lc));
 	};
 
+	currentSpectrum.emissionNormalize = function(emission,lc){
+		//return emission/514;
+		return emission*lc/1000;
+	};
 
 	// Conversion data comes from here: http://www.adobe.com/digitalimag/pdfs/AdobeRGB1998.pdf
 	currentSpectrum.XYZtoAdobeRGB = function(XYZ){
@@ -265,8 +287,17 @@
 			];
 	};
 
+	currentSpectrum.RGBdistance = function(RGBa, RGBb){
+		var RGBdist = Math.pow(
+			(Math.pow((RGBa[0]-RGBb[0]), 2) +
+			Math.pow((RGBa[1]-RGBb[1]), 2) +
+			Math.pow((RGBa[2]-RGBb[2]), 2)),
+			1/2);
+		return Math.round(RGBdist*100)/100;
+	};
+
 	currentSpectrum.returnRGB = function(returnNormalized){
-		var XYZ = this.spectrumToXYZ();
+		var XYZ = this.spectrumTypeFunction();
 		var RGB = this.colorSpaceConversionFunction(XYZ)[0];
 		var RGBNormalized = this.RGBNormalize(RGB);
 		if(returnNormalized){
@@ -316,7 +347,7 @@
 
 	currentSpectrum.findMaxSaturation = function(minSaturation, maxSaturation, i){
 		lcFactor = (minSaturation + maxSaturation)/2;
-		var dummyColor = this.XYZtoAdobeRGB(this.spectrumToXYZ(lcFactor));
+		var dummyColor = this.colorSpaceConversionFunction(this.spectrumTypeFunction(lcFactor));
 		if (i > 0){
 			if (dummyColor[1]){
 				lcFactor = currentSpectrum.findMaxSaturation(minSaturation, lcFactor, i - 1);
@@ -328,13 +359,23 @@
 	};
 
 	currentSpectrum.setMaxSaturation = function(){
-		this.maxSaturation = this.findMaxSaturation(0, 100/this.spectrumMaximum, 24);
+		this.maxSaturation = this.findMaxSaturation(0, 100/this.spectrumMaximum, 48);
 		this.lcFactor = this.maxSaturation/2;
 	};
 
 	var delimiters = {
 			"comma":",",
 			"tab":"\t"
+		};
+
+	var spectrumTypes = {
+			"Absorption":currentSpectrum.spectrumToXYZabsorption,
+			"Emission":currentSpectrum.spectrumToXYZemission
+		};
+
+	var spectrumTypeFactors = {
+			"Absorption":"lc = ",
+			"Emission":"f = "
 		};
 
 	var colorSpaces = {
@@ -351,6 +392,8 @@
 	currentSpectrum.spectrumDelimiter = delimiters["comma"];
 	currentSpectrum.illuminantDelimiter = delimiters["comma"];
 	currentSpectrum.observerDelimiter = delimiters["comma"];
+	currentSpectrum.spectrumTypeFunction = spectrumTypes["Absorption"];
+	currentSpectrum.spectrumTypeFactor = spectrumTypeFactors["Absorption"];
 	currentSpectrum.colorSpaceConversionFunction = colorSpaces["Adobe RGB (1998)"];
 
 
@@ -370,9 +413,10 @@
 	var openSpectrumWindow = new Window("palette", "Spectrum to RGB conversion");
 
 	var basicSettings = openSpectrumWindow.add("panel", undefined, "Choose a spectrum file");
-		basicSettings.size = [380, 80];
+		basicSettings.size = [700, 80];
 		var spectrumFileGroup = basicSettings.add("group");
 			spectrumFileGroup.orientation = "row";
+			spectrumFileGroup.alignment ="left";
 		var spectrumFile = spectrumFileGroup.add("button",undefined,"Open a spectrum file");
 		var spectrumFileDelimiterText = spectrumFileGroup.add("statictext", undefined, "Delimiter:");
 		var spectrumFileDelimiter = spectrumFileGroup.add("dropdownlist", undefined, 
@@ -384,10 +428,25 @@
 				//currentSpectrum.setSpectrum();
 				//colorPreview.updateAll();
 			};
+		var spectrumTypeText = spectrumFileGroup.add("statictext", undefined, "Spectrum type:");
+		var spectrumType = spectrumFileGroup.add("dropdownlist", undefined, 
+			(function(x){var keys = [];for (var key in x){keys.push(key);}return keys;})(spectrumTypes)
+			);
+			spectrumType.selection = 0;
+			spectrumType.onChange = function(){
+				currentSpectrum.spectrumTypeFactor = spectrumTypeFactors[spectrumType.selection];
+				lcControlUnit.text = currentSpectrum.spectrumTypeFactor;
+				currentSpectrum.spectrumTypeFunction = spectrumTypes[spectrumType.selection];
+				currentSpectrum.setMaxSaturation();
+				currentSpectrum.setPreviewColor();
+				colorPreview.updateAll();
+			};
+
 		var fileNameText = basicSettings.add("statictext",undefined,undefined, 
 				{truncate:'middle'});
 			fileNameText.text = currentSpectrum.spectrumPath;
-			fileNameText.size = [350, 20];
+			fileNameText.size = [700, 20];
+		fileNameText.alignment ="left";
 		spectrumFile.onClick = function () {
 			var file = File.openDialog();
 			currentSpectrum.swatchName = file.name;  
@@ -401,13 +460,10 @@
 			};
 		};
 		
-	/*	var absorptionOrEmission = basicSettings.add("group");
-			absorptionOrEmission.orientation = "row";
-		var absorptionRB = absorptionOrEmission.add("radiobutton", undefined, "absorption");
-		var emissionRB = absorptionOrEmission.add("radiobutton", undefined, "Emission");*/
 
 	var advancedSettings = openSpectrumWindow.add("panel", undefined, "Advanced Settings");
-		advancedSettings.size = [380, 50];
+		advancedSettings.size = [700, 50];
+		advancedSettings.alignChildren ="left";
 		var colorSpace = advancedSettings.add("dropdownlist", undefined, 
 			(function(x){var keys = [];for (var key in x){keys.push(key);}return keys;})(colorSpaces)
 			);
@@ -424,25 +480,16 @@
 
 
 	var colorPreview = openSpectrumWindow.add("panel", undefined, "Color preview");
-		colorPreview.size = [380, 80];
+		colorPreview.size = [700, 120];
+		colorPreview.alignChildren ="left";
 		var lcControlGroup = colorPreview.add("group");
 			lcControlGroup.orientation = "row";
-		var lcControl = lcControlGroup.add("slider",undefined,"Open an illuminant file");
-			lcControl.minvalue = 0;
-			lcControl.maxvalue = 1;
-			lcControl.value = currentSpectrum.lcFactor/currentSpectrum.maxSaturation;
-		lcControl.onChanging = function() {
-		    currentSpectrum.lcFactor = Number(lcControl.value*currentSpectrum.maxSaturation);
-			currentSpectrum.setPreviewColor();
-		    colorPreview.updateAll();
-		    };
-		var lcControlUnit = lcControlGroup.add("statictext", undefined, "lc = ");
-		var lcControlValue = lcControlGroup.add("edittext", [0,0,110,20], lcControl.value*currentSpectrum.maxSaturation);
-		lcControlValue.onChange = function() {
-		    currentSpectrum.lcFactor = Number(lcControlValue.text);
-			currentSpectrum.setPreviewColor();
-		    colorPreview.updateAll();
-		    };
+		var rgbValuesPreview = colorPreview.add("group");
+		var rgbText = rgbValuesPreview.add("statictext", undefined, "");
+		rgbText.text = 
+				"R: 000, " +
+				"G: 000, " +
+				"B: 000" + "; distance = 0000000000";
 		var lcColorPreview = lcControlGroup.add("group");
 			lcColorPreview.size = [50, 50];
 		var colorPreview = lcColorPreview.graphics;
@@ -459,7 +506,38 @@
 			lcControlValue.text = currentSpectrum.lcFactor;
 			lcColorPreview.hide();
 			lcColorPreview.show();
+			var colRGB = [];
+			var colRGBrounded = [];
+			colRGB[0] = currentSpectrum.previewColor[0]*255;
+			colRGB[1] = currentSpectrum.previewColor[1]*255;
+			colRGB[2] = currentSpectrum.previewColor[2]*255;
+			colRGBrounded[0] = Math.round(colRGB[0]);
+			colRGBrounded[1] = Math.round(colRGB[1]);
+			colRGBrounded[2] = Math.round(colRGB[2]);
+			rgbText.text = 
+				"R: " + colRGBrounded[0] + ", " +
+				"G: " + colRGBrounded[1] + ", " +
+				"B: " + colRGBrounded[2] + "; distance = " + 
+				currentSpectrum.RGBdistance (colRGB,colRGBrounded);
 		};
+		var lcControl = lcControlGroup.add("slider",undefined,"Open an illuminant file");
+			lcControl.minvalue = 0;
+			lcControl.maxvalue = 1;
+			lcControl.value = currentSpectrum.lcFactor/currentSpectrum.maxSaturation;
+			lcControl.size = [450,10];
+		lcControl.onChanging = function() {
+		    currentSpectrum.lcFactor = Number(lcControl.value*currentSpectrum.maxSaturation);
+			currentSpectrum.setPreviewColor();
+		    colorPreview.updateAll();
+		    };
+		var lcControlUnit = lcControlGroup.add("statictext", undefined, currentSpectrum.spectrumTypeFactor);
+		var lcControlValue = lcControlGroup.add("edittext", [0,0,110,20], lcControl.value*currentSpectrum.maxSaturation);
+		lcControlValue.onChange = function() {
+		    currentSpectrum.lcFactor = Number(lcControlValue.text);
+			currentSpectrum.setPreviewColor();
+		    colorPreview.updateAll();
+		    };
+
 			
 
 	var swatchNameGroup = openSpectrumWindow.add("group");
