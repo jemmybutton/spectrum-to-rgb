@@ -1,6 +1,5 @@
 //    spectrum-to-rgb.jsx 0.0.2
-//    Illustrator/InDesign script to create swatches from absorption 
-//    and emission spectra
+//    Illustrator/InDesign script to create swatches from absorption spectra
 //    Copyright 2023 Sergey Slyusarev
 //
 //    This program is free software: you can redistribute it and/or modify
@@ -131,16 +130,14 @@
 		};
 	};
 
-	currentSpectrum.determineSpectrumMaximum = function(){
-		this.spectrumMaximum = (function(x){
+	currentSpectrum.determineSpectrumLum = function(){
+		this.spectrumLum = (function(spect,obs){
 			var rv = 0;
-			for (var i in x){
-				if (x[i]>rv){
-					rv = x[i];
-				};
+			for (var i in spect){
+				rv = rv + spect[i]*obs.Y[i];
 			};
 			return rv;
-		})(this.spectrum);
+		})(this.spectrum,this.observer);
 	};
 
 	currentSpectrum.spectrumToXYZabsorption = function(lcFactor){
@@ -183,8 +180,7 @@
 	};
 
 	currentSpectrum.emissionNormalize = function(emission,lc){
-		//return emission/514;
-		return emission*lc/1000;
+		return emission*lc;
 	};
 
 	// Conversion data comes from here: http://www.adobe.com/digitalimag/pdfs/AdobeRGB1998.pdf
@@ -279,12 +275,27 @@
 		return [RGB, isOutsideDown, isOutsideUp];
 	};
 
-	currentSpectrum.RGBNormalize = function(RGB){
-		return [
-			Math.round(RGB[0]*255),
-			Math.round(RGB[1]*255),
-			Math.round(RGB[2]*255)
+	currentSpectrum.RGBNormalize = function(RGB, round){
+		var RGBarray = [
+				RGB[0]*255,
+				RGB[1]*255,
+				RGB[2]*255
 			];
+		if (round) {
+			RGBarray = [
+				Math.round(RGBarray[0]),
+				Math.round(RGBarray[1]),
+				Math.round(RGBarray[2])]
+			};
+		return RGBarray;
+	};
+
+	currentSpectrum.RGBcolorString = function(RGB){
+		return(
+			"R: " + RGB[0] + ", " +
+			"G: " + RGB[1] + ", " +
+			"B: " + RGB[2]
+			);
 	};
 
 	currentSpectrum.RGBdistance = function(RGBa, RGBb){
@@ -299,7 +310,7 @@
 	currentSpectrum.returnRGB = function(returnNormalized){
 		var XYZ = this.spectrumTypeFunction();
 		var RGB = this.colorSpaceConversionFunction(XYZ)[0];
-		var RGBNormalized = this.RGBNormalize(RGB);
+		var RGBNormalized = this.RGBNormalize(RGB, true);
 		if(returnNormalized){
 			return RGBNormalized;
 		} else {
@@ -313,7 +324,7 @@
 
 	currentSpectrum.setObserver = function(observerPath){
 		if (typeof(observerPath) === 'undefined'){
-			observerPath = this.observerPath;
+			observerPath = standardObservers[this.standardObserver];
 		};
 		this.observer = [];
 		this.observer.X = this.readSpectrumCSV(observerPath, this.observerDelimiter, 0, 1);
@@ -336,7 +347,7 @@
 		if (newSpectrum != false){
 			this.spectrum = newSpectrum;
 			this.spectrumPath = spectrumPath;
-			this.determineSpectrumMaximum();
+			this.determineSpectrumLum();
 			this.setMaxSaturation();
 			this.setPreviewColor();
 			return true;
@@ -348,8 +359,13 @@
 	currentSpectrum.findMaxSaturation = function(minSaturation, maxSaturation, i){
 		lcFactor = (minSaturation + maxSaturation)/2;
 		var dummyColor = this.colorSpaceConversionFunction(this.spectrumTypeFunction(lcFactor));
+		if (currentSpectrum.spectrumType == "Absorption"){
+			var criterion = 1;
+		} else if (currentSpectrum.spectrumType == "Emission"){
+			var criterion = 2;
+		};
 		if (i > 0){
-			if (dummyColor[1]){
+			if (dummyColor[criterion]){
 				lcFactor = currentSpectrum.findMaxSaturation(minSaturation, lcFactor, i - 1);
 			} else {
 				lcFactor = currentSpectrum.findMaxSaturation(lcFactor, maxSaturation, i - 1);
@@ -359,7 +375,12 @@
 	};
 
 	currentSpectrum.setMaxSaturation = function(){
-		this.maxSaturation = this.findMaxSaturation(0, 100/this.spectrumMaximum, 48);
+		if (currentSpectrum.spectrumType == "Absorption"){
+			this.maxSaturation = this.findMaxSaturation(0, 1000/this.spectrumLum, 64);
+		};
+		if (currentSpectrum.spectrumType == "Emission"){
+			this.maxSaturation = this.findMaxSaturation(0, this.spectrumLum, 64);
+		};
 		this.lcFactor = this.maxSaturation/2;
 	};
 
@@ -392,15 +413,20 @@
 	currentSpectrum.spectrumDelimiter = delimiters["comma"];
 	currentSpectrum.illuminantDelimiter = delimiters["comma"];
 	currentSpectrum.observerDelimiter = delimiters["comma"];
-	currentSpectrum.spectrumTypeFunction = spectrumTypes["Absorption"];
-	currentSpectrum.spectrumTypeFactor = spectrumTypeFactors["Absorption"];
+	currentSpectrum.spectrumType = "Absorption";
+	currentSpectrum.spectrumTypeFunction = spectrumTypes[currentSpectrum.spectrumType];
+	currentSpectrum.spectrumTypeFactor = spectrumTypeFactors[currentSpectrum.spectrumType];
 	currentSpectrum.colorSpaceConversionFunction = colorSpaces["Adobe RGB (1998)"];
 
 
 	// illuminant and observer data comes from here: http://files.cie.co.at/204.xls
 
 	var scriptDataPath = (new File($.fileName)).parent + "/spectrum-to-rgb_data/";
-	currentSpectrum.observerPath = scriptDataPath + "CIE1931observer.csv";
+	var standardObservers = {
+			"CIE 1931":scriptDataPath + "CIE1931observer.csv"
+			//,"CIE 1964":scriptDataPath + "CIE1964observer.csv"
+		};
+	currentSpectrum.standardObserver = "CIE 1931";
 	currentSpectrum.illuminantPath = scriptDataPath + "CIED65.csv";
 	currentSpectrum.spectrumPath = scriptDataPath + "grey.csv";
 
@@ -434,6 +460,7 @@
 			);
 			spectrumType.selection = 0;
 			spectrumType.onChange = function(){
+				currentSpectrum.spectrumType = spectrumType.selection.text;
 				currentSpectrum.spectrumTypeFactor = spectrumTypeFactors[spectrumType.selection];
 				lcControlUnit.text = currentSpectrum.spectrumTypeFactor;
 				currentSpectrum.spectrumTypeFunction = spectrumTypes[spectrumType.selection];
@@ -464,20 +491,34 @@
 	var advancedSettings = openSpectrumWindow.add("panel", undefined, "Advanced Settings");
 		advancedSettings.size = [700, 50];
 		advancedSettings.alignChildren ="left";
-		var colorSpace = advancedSettings.add("dropdownlist", undefined, 
-			(function(x){var keys = [];for (var key in x){keys.push(key);}return keys;})(colorSpaces)
-			);
-			colorSpace.selection = 0;
-			colorSpace.onChange = function(){
-				currentSpectrum.colorSpaceConversionFunction = colorSpaces[colorSpace.selection];
-				currentSpectrum.setMaxSaturation();
-				currentSpectrum.setPreviewColor();
-				colorPreview.updateAll();
+		var advancedSettingsGroup = advancedSettings.add("group");
+			advancedSettingsGroup.orientation = "row";
+			var colorSpace = advancedSettingsGroup.add("dropdownlist", undefined, 
+				(function(x){var keys = [];for (var key in x){keys.push(key);}return keys;})(colorSpaces)
+				);
+				colorSpace.selection = 0;
+				colorSpace.onChange = function(){
+					currentSpectrum.colorSpaceConversionFunction = colorSpaces[colorSpace.selection];
+					currentSpectrum.setMaxSaturation();
+					currentSpectrum.setPreviewColor();
+					colorPreview.updateAll();
+				};
+			if(standardObservers.length > 1){
+				var standardObserver = advancedSettingsGroup.add("dropdownlist", undefined, 
+					(function(x){var keys = [];for (var key in x){keys.push(key);}return keys;})(standardObservers)
+					);
+					standardObserver.selection = 0;
+					standardObserver.onChange = function(){
+						currentSpectrum.standardObserver = standardObserver.selection;
+						currentSpectrum.setObserver();
+						currentSpectrum.setMaxSaturation();
+						currentSpectrum.setPreviewColor();
+						colorPreview.updateAll();
+				};
 			};
 		/*var illuminantFileGroup = advancedSettings.add("group");
 			illuminantFileGroup.orientation = "row";
 		var illuminantFile = illuminantFileGroup.add("button",undefined,"Open an illuminant file");*/
-
 
 	var colorPreview = openSpectrumWindow.add("panel", undefined, "Color preview");
 		colorPreview.size = [700, 120];
@@ -486,10 +527,16 @@
 			lcControlGroup.orientation = "row";
 		var rgbValuesPreview = colorPreview.add("group");
 		var rgbText = rgbValuesPreview.add("statictext", undefined, "");
-		rgbText.text = 
-				"R: 000, " +
-				"G: 000, " +
-				"B: 000" + "; distance = 0000000000";
+		rgbText.characters = 14;
+		rgbText.text = currentSpectrum.RGBcolorString(currentSpectrum.RGBNormalize(currentSpectrum.previewColor, true));
+
+		var rgbDistanceLabel = rgbValuesPreview.add("statictext", undefined, "RGB distance: ");
+		var rgbDistanceText = rgbValuesPreview.add("statictext", undefined, "");
+		rgbDistanceText.characters = 10;
+		rgbDistanceText.text = currentSpectrum.RGBdistance(
+			currentSpectrum.RGBNormalize(currentSpectrum.previewColor, true),
+			currentSpectrum.RGBNormalize(currentSpectrum.previewColor, false)
+			);
 		var lcColorPreview = lcControlGroup.add("group");
 			lcColorPreview.size = [50, 50];
 		var colorPreview = lcColorPreview.graphics;
@@ -503,22 +550,18 @@
 			};
 		colorPreview.updateAll = function(){
 			lcControl.value = currentSpectrum.lcFactor/currentSpectrum.maxSaturation;
-			lcControlValue.text = currentSpectrum.lcFactor;
+			if (currentSpectrum.spectrumType == "Absorption"){
+				lcControlValue.text = currentSpectrum.lcFactor;
+			} else if (currentSpectrum.spectrumType == "Emission"){
+				lcControlValue.text = Math.round(lcControl.value*1000)/1000;
+			};
 			lcColorPreview.hide();
 			lcColorPreview.show();
-			var colRGB = [];
-			var colRGBrounded = [];
-			colRGB[0] = currentSpectrum.previewColor[0]*255;
-			colRGB[1] = currentSpectrum.previewColor[1]*255;
-			colRGB[2] = currentSpectrum.previewColor[2]*255;
-			colRGBrounded[0] = Math.round(colRGB[0]);
-			colRGBrounded[1] = Math.round(colRGB[1]);
-			colRGBrounded[2] = Math.round(colRGB[2]);
-			rgbText.text = 
-				"R: " + colRGBrounded[0] + ", " +
-				"G: " + colRGBrounded[1] + ", " +
-				"B: " + colRGBrounded[2] + "; distance = " + 
-				currentSpectrum.RGBdistance (colRGB,colRGBrounded);
+			rgbText.text = currentSpectrum.RGBcolorString(currentSpectrum.RGBNormalize(currentSpectrum.previewColor, true));
+			rgbDistanceText.text = currentSpectrum.RGBdistance(
+				currentSpectrum.RGBNormalize(currentSpectrum.previewColor, true),
+				currentSpectrum.RGBNormalize(currentSpectrum.previewColor, false)
+				);
 		};
 		var lcControl = lcControlGroup.add("slider",undefined,"Open an illuminant file");
 			lcControl.minvalue = 0;
@@ -537,9 +580,7 @@
 			currentSpectrum.setPreviewColor();
 		    colorPreview.updateAll();
 		    };
-
 			
-
 	var swatchNameGroup = openSpectrumWindow.add("group");
 		swatchNameGroup.orientation = "row";
 		var swatchNameText = swatchNameGroup.add("statictext", undefined, "Swatch name:");
